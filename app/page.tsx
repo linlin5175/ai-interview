@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type ChatRole = "assistant" | "user";
 type ChatMessage = { role: ChatRole; content: string };
@@ -31,8 +31,19 @@ type InterviewApiResponse =
 const DEFAULT_TOTAL_QUESTIONS = 3;
 const MIN_TOTAL_QUESTIONS = 1;
 const MAX_TOTAL_QUESTIONS = 10;
+const API_KEY_STORAGE_KEY = "ai-interview:openai-api-key";
+
+function maskApiKey(key: string) {
+  if (key.length <= 8) return "••••••••";
+  return `${key.slice(0, 6)}••••${key.slice(-4)}`;
+}
 
 export default function Home() {
+  const [apiKey, setApiKey] = useState("");
+  const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [editingApiKey, setEditingApiKey] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
+
   const [jobDescription, setJobDescription] = useState("");
   const [totalQuestions, setTotalQuestions] = useState(DEFAULT_TOTAL_QUESTIONS);
   const [started, setStarted] = useState(false);
@@ -42,13 +53,39 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [evaluation, setEvaluation] = useState<Evaluation | null>(null);
 
+  useEffect(() => {
+    const saved = window.localStorage.getItem(API_KEY_STORAGE_KEY);
+    if (saved) setApiKey(saved);
+    else setEditingApiKey(true);
+  }, []);
+
   const answeredCount = messages.filter((m) => m.role === "user").length;
   const candidateAnswers = messages.filter((m) => m.role === "user");
+
+  function saveApiKey() {
+    const trimmed = apiKeyDraft.trim();
+    if (!trimmed) return;
+    window.localStorage.setItem(API_KEY_STORAGE_KEY, trimmed);
+    setApiKey(trimmed);
+    setApiKeyDraft("");
+    setEditingApiKey(false);
+    setShowApiKey(false);
+  }
+
+  function clearApiKey() {
+    window.localStorage.removeItem(API_KEY_STORAGE_KEY);
+    setApiKey("");
+    setApiKeyDraft("");
+    setEditingApiKey(true);
+  }
 
   async function callInterviewApi(nextMessages: ChatMessage[]) {
     const res = await fetch("/api/interview", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-openai-api-key": apiKey,
+      },
       body: JSON.stringify({ jobDescription, messages: nextMessages, totalQuestions }),
     });
     const data: InterviewApiResponse = await res.json();
@@ -59,7 +96,7 @@ export default function Home() {
   }
 
   async function startInterview() {
-    if (!jobDescription.trim() || loading) return;
+    if (!jobDescription.trim() || !apiKey || loading) return;
     setLoading(true);
     setError(null);
     try {
@@ -120,6 +157,69 @@ export default function Home() {
           </p>
         </header>
 
+        <section className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+              OpenAI API Key 設定
+            </h2>
+            {!editingApiKey && apiKey && (
+              <button
+                onClick={() => {
+                  setApiKeyDraft(apiKey);
+                  setEditingApiKey(true);
+                }}
+                className="text-xs font-medium text-zinc-500 underline hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+              >
+                變更
+              </button>
+            )}
+          </div>
+
+          {!editingApiKey && apiKey ? (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                已設定：<span className="font-mono">{maskApiKey(apiKey)}</span>
+              </p>
+              <button
+                onClick={clearApiKey}
+                className="text-xs font-medium text-red-500 underline hover:text-red-700"
+              >
+                清除
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                你的 API Key 只會儲存在瀏覽器的 localStorage，並在呼叫本站 API
+                時一併帶上，不會存到伺服器。
+              </p>
+              <div className="flex gap-2">
+                <input
+                  type={showApiKey ? "text" : "password"}
+                  value={apiKeyDraft}
+                  onChange={(e) => setApiKeyDraft(e.target.value)}
+                  placeholder="sk-..."
+                  className="flex-1 rounded-lg border border-zinc-300 bg-white p-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey((v) => !v)}
+                  className="rounded-lg border border-zinc-300 px-3 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                >
+                  {showApiKey ? "隱藏" : "顯示"}
+                </button>
+              </div>
+              <button
+                onClick={saveApiKey}
+                disabled={!apiKeyDraft.trim()}
+                className="self-end rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+              >
+                儲存
+              </button>
+            </div>
+          )}
+        </section>
+
         {!started && !evaluation && (
           <section className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
             <label
@@ -159,9 +259,15 @@ export default function Home() {
               className="w-24 rounded-lg border border-zinc-300 bg-white p-2 text-sm text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
             />
 
+            {!apiKey && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                請先在上方設定你的 OpenAI API Key，才能開始面試。
+              </p>
+            )}
+
             <button
               onClick={startInterview}
-              disabled={!jobDescription.trim() || loading}
+              disabled={!jobDescription.trim() || !apiKey || loading}
               className="self-end rounded-full bg-zinc-900 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
             >
               {loading ? "產生問題中..." : "開始面試"}

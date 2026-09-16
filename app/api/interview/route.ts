@@ -9,11 +9,11 @@ const MAX_TOTAL_QUESTIONS = 10;
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
 export async function POST(request: NextRequest) {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = request.headers.get("x-openai-api-key")?.trim();
   if (!apiKey) {
     return NextResponse.json(
-      { error: "伺服器尚未設定 OPENAI_API_KEY，請於 .env.local 中設定。" },
-      { status: 500 }
+      { error: "請先於設定中輸入你的 OpenAI API Key。" },
+      { status: 401 }
     );
   }
 
